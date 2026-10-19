@@ -1,0 +1,5 @@
+hand_landmarker.task
+__pycache__/
+*.pyc
+.venv/
+.DS_Store

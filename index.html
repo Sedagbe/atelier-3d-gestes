@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atelier 3D - pilotage par la main</title>
+<style>
+:root{--acc:#38bdf8;--panel:rgba(12,20,36,.74);--line:rgba(148,197,255,.16);--tx:#e6eefc;--mut:#8ea3c4}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;color:var(--tx);font-family:system-ui,"Segoe UI",Roboto,sans-serif;
+  background:radial-gradient(1200px 800px at 50% 42%,#14233f 0%,#0a1020 55%,#05080f 100%)}
+button{font:inherit;color:inherit;cursor:pointer}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.glass{background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:16px}
+
+/* Colonne gauche : liste des objets */
+#left{position:fixed;left:16px;top:16px;bottom:88px;width:236px;padding:14px 10px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+#left h1{margin:2px 8px 6px;font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--acc)}
+#left h1 small{display:block;color:var(--mut);font-size:11px;text-transform:none;letter-spacing:0;margin-top:2px}
+.item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:12px;border:1px solid transparent;background:transparent;min-height:46px;transition:.15s}
+.item:hover{background:rgba(56,189,248,.08)}
+.item .n{width:20px;font-size:11px;color:var(--mut);text-align:center}
+.item .e{font-size:20px}
+.item .t{display:flex;flex-direction:column;font-size:14px;line-height:1.15}
+.item .t small{color:var(--mut);font-size:11px;margin-top:2px}
+.item.on{background:rgba(56,189,248,.16);border-color:rgba(56,189,248,.5)}
+
+/* Colonne droite */
+#right{position:fixed;right:16px;top:16px;bottom:88px;width:292px;display:flex;flex-direction:column;gap:12px}
+#cam{padding:8px;position:relative}
+#preview{width:100%;aspect-ratio:4/3;border-radius:10px;background:#050a14;display:block}
+#hud{margin-top:8px;font-size:13px;position:relative;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.05);overflow:hidden}
+#hudbar{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--acc)}
+#legend{padding:10px 12px;font-size:12px;display:grid;gap:5px}
+#legend div{display:flex;gap:8px;align-items:baseline}
+#legend b{white-space:nowrap}
+#legend span{color:var(--mut)}
+#card{padding:14px;flex:1;overflow:auto;min-height:120px}
+.ctitle{display:flex;gap:10px;align-items:center}
+.ctitle>span{font-size:30px}
+.ctitle h2{margin:0;font-size:17px}
+.ctitle small{color:var(--mut)}
+.res{font-size:13px;line-height:1.45;color:#c9d6ee;margin:10px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chips span{font-size:11px;padding:4px 8px;border-radius:999px;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.28)}
+.sel{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.45);border-radius:12px;padding:10px 12px;margin-bottom:12px;position:relative}
+.sel b{font-size:14px}
+.sel p{margin:6px 0;font-size:12.5px;line-height:1.45;color:#d6e2f7}
+.sel .mat{font-size:11.5px;color:var(--acc)}
+.mini{position:absolute;right:8px;top:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);border-radius:8px;padding:3px 8px;font-size:11px}
+.plist .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.plist{display:flex;flex-wrap:wrap;gap:6px}
+.plist .lbl{width:100%}
+.plist button{border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:8px;padding:6px 9px;font-size:12px;min-height:32px}
+.plist button.on{background:rgba(56,189,248,.28);border-color:var(--acc)}
+
+/* Barre d'outils */
+#bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:8px;padding:8px;z-index:5}
+#bar button{border:1px solid var(--line);background:rgba(255,255,255,.05);border-radius:12px;padding:10px 14px;min-height:46px;font-size:14px;transition:.15s}
+#bar button:hover{background:rgba(56,189,248,.12)}
+#bar button.on{background:rgba(56,189,248,.28);border-color:var(--acc)}
+
+[data-action].hover{outline:2px solid var(--acc);outline-offset:1px;background:rgba(56,189,248,.22)!important}
+
+/* Curseur main */
+#cursor{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:60;display:none}
+#ring{position:absolute;left:-28px;top:-28px;width:56px;height:56px;border-radius:50%;
+  background:conic-gradient(var(--acc) calc(var(--p,0)*360deg),rgba(255,255,255,.22) 0);
+  -webkit-mask:radial-gradient(circle,transparent 19px,#000 20px,#000 27px,transparent 28px);
+          mask:radial-gradient(circle,transparent 19px,#000 20px,#000 27px,transparent 28px)}
+#dot{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 12px var(--acc)}
+
+#toast{position:fixed;left:50%;top:22px;transform:translate(-50%,-30px);opacity:0;padding:9px 16px;border-radius:999px;font-size:14px;pointer-events:none;transition:.25s;z-index:70}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* Ecran de démarrage */
+#start{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(5,8,15,.82);backdrop-filter:blur(8px)}
+#start .box{width:min(560px,92vw);padding:28px;text-align:left}
+#start h1{margin:0 0 6px;font-size:26px}
+#start p{color:#b9c8e4;line-height:1.5;font-size:14px}
+#start .grid{display:grid;gap:7px;margin:14px 0 18px;font-size:13.5px}
+#start .grid div{display:flex;gap:10px}
+#start .grid b{min-width:92px}
+#start .row{display:flex;gap:10px;flex-wrap:wrap}
+.cta{border:0;background:var(--acc);color:#04202e;font-weight:700;padding:13px 20px;border-radius:12px;font-size:15px}
+.ghost{border:1px solid var(--line);background:rgba(255,255,255,.06);padding:13px 18px;border-radius:12px;font-size:14px}
+#startMsg{margin-top:12px;font-size:13px;color:#fbbf24;min-height:18px}
+
+@media (max-width:1050px){#legend{display:none}#right{width:240px}#left{width:200px}}
+</style>
+<script type="importmap">
+{"imports":{
+ "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+ "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<video id="video" playsinline muted style="position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;left:0;top:0"></video>
+
+<aside id="left" class="glass">
+  <h1>Atelier 3D<small>10 équipements à explorer</small></h1>
+  <div id="list"></div>
+</aside>
+
+<aside id="right">
+  <div id="cam" class="glass">
+    <canvas id="preview" width="320" height="240"></canvas>
+    <div id="hud"><span id="hudtxt">🖱️ Mode souris</span><i id="hudbar"></i></div>
+  </div>
+  <div id="legend" class="glass"></div>
+  <div id="card" class="glass"></div>
+</aside>
+
+<nav id="bar" class="glass">
+  <button data-action="prev" title="Objet précédent (←)">◀</button>
+  <button data-action="explode" id="b-explode">💥 Vue éclatée</button>
+  <button data-action="xray" id="b-xray">🔍 Transparence</button>
+  <button data-action="spin" id="b-spin">🔄 Rotation auto</button>
+  <button data-action="reset">🎯 Recentrer</button>
+  <button data-action="next" title="Objet suivant (→)">▶</button>
+</nav>
+
+<div id="cursor"><div id="ring"></div><div id="dot"></div></div>
+<div id="toast" class="glass"></div>
+
+<div id="start">
+  <div class="box glass">
+    <h1>Atelier 3D <span style="color:var(--acc)">· pilotage par la main</span></h1>
+    <p>Explorez 10 équipements en 3D, pièce par pièce, sans toucher ni souris : votre main devant la caméra suffit. Tout le traitement d'image reste sur votre ordinateur.</p>
+    <div class="grid" id="startLegend"></div>
+    <div class="row">
+      <button class="cta" id="btnCam">📷 Activer la caméra</button>
+      <button class="ghost" id="btnMouse">Continuer avec la souris</button>
+    </div>
+    <div id="startMsg"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const PI = Math.PI, H = PI / 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* =====================================================================
+   DONNEES : 10 équipements. Chaque pièce : nom, rôle, matériau, couleur,
+   formes [type, args, position, rotation, échelle, couleur, lumineux],
+   et vecteur d'éclatement.
+   ===================================================================== */
+const P = (n, d, m, c, items, ex, o = {}) => ({ n, d, m, c, items, ex, ...o });
+const wave = (y, amp, col, x0, z, n = 14, st = 0.115, ph = 0) =>
+  Array.from({ length: n }, (_, i) => ['box', [st * 1.05, 0.03, 0.012],
+    [x0 + i * st, y + Math.sin(i * 0.9 + ph) * amp, z], [0, 0, Math.cos(i * 0.9 + ph) * amp * 2.5], null, col, true]);
+
+const roue = (n, x, z) => P(n,
+  "Le pneu assure l'adhérence et amortit les irrégularités ; la jante en alliage le relie au moyeu et au frein.",
+  "Caoutchouc renforcé, jante en alliage léger", 0x1b1b1f,
+  [['cyl', [0.34, 0.34, 0.26, 28], [x, -0.2, z], [H, 0, 0]],
+   ['cyl', [0.2, 0.2, 0.28, 12], [x, -0.2, z], [H, 0, 0], null, 0xcfd6dd]],
+  [x * 0.3, -0.6, z * 1.5]);
+
+const OBJETS = [
+/* 1 ---------------------------------------------------------------- */
+{ nom: "Avion de ligne", emoji: "✈️", cat: "Transport", dist: 10, y: 0,
+  resume: "Un avion monocouloir moyen-courrier : fuselage pressurisé, ailes porteuses, deux turboréacteurs et un empennage qui assure la stabilité.",
+  specs: ["Envergure ≈ 35 m", "2 turboréacteurs", "Croisière ≈ 830 km/h", "150-180 passagers"],
+  parts: [
+    P("Fuselage", "Tube pressurisé qui abrite la cabine, la soute et les câblages. Sa peau mince est renforcée par des cadres circulaires et des lisses longitudinales.", "Alliage d'aluminium, composites carbone", 0xe9eef3,
+      [['cyl', [0.38, 0.38, 3.6, 32], [0, 0, 0], [0, 0, H]]], [0, 0.9, 0]),
+    P("Radôme", "Carénage du nez qui protège le radar météo tout en laissant passer les ondes radio.", "Composite verre/résine (transparent aux ondes radar)", 0x2b3a4a,
+      [['cone', [0.38, 0.9, 32], [2.25, 0, 0], [0, 0, -H]]], [1.6, 0.3, 0]),
+    P("Cockpit", "Poste de pilotage. Les vitres multicouches sont chauffées pour éviter le givre et résistent aux impacts d'oiseaux.", "Verre feuilleté et film chauffant", 0x16222e,
+      [['sph', [0.3], [1.7, 0.22, 0], [0, 0, 0], [1.5, 0.7, 1.1]]], [1.0, 1.4, 0], { metal: 0.7, rough: 0.1 }),
+    P("Cône de queue", "Partie arrière effilée. Elle abrite souvent le groupe auxiliaire de puissance (APU) qui fournit électricité et air comprimé au sol.", "Aluminium et titane (zone chaude)", 0xdfe5ea,
+      [['cone', [0.38, 1.0, 32], [-2.3, 0, 0], [0, 0, H]]], [-1.6, 0.3, 0]),
+    P("Aile droite", "Génère la portance. Elle contient les réservoirs de carburant, les volets, les becs et les ailerons qui commandent le roulis.", "Alliage d'aluminium, longerons renforcés", 0xcfd8e0,
+      [['box', [0.9, 0.07, 2.4], [-0.1, -0.12, 1.55], [0, -0.4, 0]]], [0, -0.1, 1.3]),
+    P("Aile gauche", "Symétrique de l'aile droite : les deux ailes produisent ensemble la force qui soutient l'avion en vol.", "Alliage d'aluminium, longerons renforcés", 0xcfd8e0,
+      [['box', [0.9, 0.07, 2.4], [-0.1, -0.12, -1.55], [0, 0.4, 0]]], [0, -0.1, -1.3]),
+    P("Turboréacteurs", "Moteurs à double flux : la grande soufflante avant produit l'essentiel de la poussée, le cœur du moteur la fait tourner.", "Titane, alliages de nickel, composites", 0x9aa5b1,
+      [['cyl', [0.2, 0.17, 0.8, 24], [0.4, -0.45, 1.1], [0, 0, H]], ['cyl', [0.2, 0.17, 0.8, 24], [0.4, -0.45, -1.1], [0, 0, H]],
+       ['cyl', [0.12, 0.12, 0.05, 20], [0.81, -0.45, 1.1], [0, 0, H], null, 0x1c2430], ['cyl', [0.12, 0.12, 0.05, 20], [0.81, -0.45, -1.1], [0, 0, H], null, 0x1c2430]],
+      [0.9, -1.0, 0], { metal: 0.7 }),
+    P("Empennage horizontal", "Stabilise l'avion en tangage ; les gouvernes de profondeur permettent de cabrer ou de piquer.", "Aluminium et composites", 0xcfd8e0,
+      [['box', [0.5, 0.05, 1.3], [-2.05, 0.1, 0.65], [0, -0.35, 0]], ['box', [0.5, 0.05, 1.3], [-2.05, 0.1, -0.65], [0, 0.35, 0]]], [-1.0, 0.8, 0]),
+    P("Dérive", "Stabilise l'avion en lacet ; la gouverne de direction contrôle le cap.", "Composite carbone", 0xe9eef3,
+      [['box', [0.8, 0.9, 0.06], [-2.0, 0.7, 0], [0, 0, 0.35]]], [-0.8, 1.5, 0]),
+    P("Train d'atterrissage", "Absorbe l'énergie de l'atterrissage grâce à des amortisseurs oléopneumatiques. Il se rétracte en vol pour réduire la traînée.", "Acier haute résistance, freins en carbone", 0x7b8591,
+      [['cyl', [0.03, 0.03, 0.5, 8], [1.4, -0.55, 0]], ['cyl', [0.13, 0.13, 0.1, 16], [1.4, -0.85, 0], [H, 0, 0], null, 0x1b1b1f],
+       ['cyl', [0.04, 0.04, 0.5, 8], [0.1, -0.5, 0.6]], ['cyl', [0.16, 0.16, 0.14, 16], [0.1, -0.8, 0.6], [H, 0, 0], null, 0x1b1b1f],
+       ['cyl', [0.04, 0.04, 0.5, 8], [0.1, -0.5, -0.6]], ['cyl', [0.16, 0.16, 0.14, 16], [0.1, -0.8, -0.6], [H, 0, 0], null, 0x1b1b1f]],
+      [0, -1.6, 0]),
+  ] },
+/* 2 ---------------------------------------------------------------- */
+{ nom: "Voiture", emoji: "🚗", cat: "Transport", dist: 8.5, y: 0.4,
+  resume: "Une berline thermique à titre pédagogique : on voit le moteur, la transmission, l'habitacle et les roues une fois la carrosserie écartée.",
+  specs: ["Moteur 4 cylindres", "Boîte 6 vitesses", "4 roues", "Châssis monocoque"],
+  parts: [
+    P("Châssis", "Squelette porteur qui reçoit le moteur, les suspensions et la carrosserie. Il doit rester rigide tout en absorbant les chocs.", "Acier à haute limite élastique", 0x30353d,
+      [['box', [3.4, 0.12, 1.35], [0, -0.17, 0]]], [0, -1.0, 0]),
+    P("Transmission", "Boîte de vitesses, arbre et différentiel : ils transmettent le couple du moteur aux roues en adaptant le régime.", "Acier trempé, carters en aluminium", 0x8d96a0,
+      [['cyl', [0.1, 0.1, 2.4, 12], [0, -0.05, 0], [0, 0, H]], ['box', [0.55, 0.35, 0.4], [0.35, 0, 0]], ['sph', [0.2], [-1.1, -0.05, 0]]], [0, -0.55, 0], { metal: 0.6 }),
+    P("Moteur", "Moteur à combustion à 4 cylindres : le piston comprime le mélange, la bielle et le vilebrequin transforment le mouvement linéaire en rotation.", "Fonte et alliage d'aluminium", 0x7f8c8d,
+      [['box', [0.85, 0.5, 0.7], [1.05, 0.12, 0]], ['box', [0.8, 0.14, 0.62], [1.05, 0.44, 0], null, null, 0x5d6670],
+       ...Array.from({ length: 4 }, (_, i) => ['cyl', [0.06, 0.06, 0.18, 12], [0.8 + i * 0.15, 0.58, 0], null, null, 0xd1d5db])], [1.2, 0.7, 0], { metal: 0.6 }),
+    P("Carrosserie", "Enveloppe extérieure. Elle protège, donne la forme aérodynamique et comporte des zones à déformation programmée.", "Tôle d'acier emboutie", 0xc0392b,
+      [['box', [3.5, 0.4, 1.6], [0, 0.15, 0]]], [0, 0.55, 0], { metal: 0.6, rough: 0.25 }),
+    P("Habitacle", "Cellule des passagers : montants renforcés, vitrage feuilleté et pavillon forment une cage de protection.", "Acier, verre feuilleté", 0x1d2b3a,
+      [['box', [1.7, 0.42, 1.42], [-0.25, 0.56, 0]], ['box', [1.5, 0.05, 1.38], [-0.25, 0.81, 0], null, null, 0xc0392b]], [0, 1.4, 0], { metal: 0.7, rough: 0.12 }),
+    P("Sièges", "Sièges avec appuie-tête, ceintures à prétensionneur et airbags associés pour retenir les occupants.", "Mousse, armature en acier, textile", 0x3b3b44,
+      [['box', [0.4, 0.1, 0.42], [0.05, 0.42, 0.35]], ['box', [0.4, 0.1, 0.42], [0.05, 0.42, -0.35]],
+       ['box', [0.1, 0.4, 0.42], [-0.12, 0.65, 0.35]], ['box', [0.1, 0.4, 0.42], [-0.12, 0.65, -0.35]],
+       ['box', [0.45, 0.1, 1.1], [-0.85, 0.42, 0]], ['box', [0.1, 0.4, 1.1], [-1.08, 0.65, 0]]], [0, 0.75, 0], { metal: 0.1, rough: 0.8 }),
+    P("Phares", "Éclairage avant à LED ou halogène, avec réflecteur ou lentille pour projeter le faisceau sans éblouir.", "Polycarbonate, LED", 0xfff3c4,
+      [['sph', [0.1], [1.75, 0.2, 0.55]], ['sph', [0.1], [1.75, 0.2, -0.55]]], [0.9, 0.1, 0], { glow: true }),
+    P("Feux arrière", "Signalent position, freinage et clignotants aux autres conducteurs.", "Polycarbonate teinté, LED", 0xff2a2a,
+      [['box', [0.05, 0.1, 0.3], [-1.76, 0.22, 0.55]], ['box', [0.05, 0.1, 0.3], [-1.76, 0.22, -0.55]]], [-0.9, 0.1, 0], { glow: true }),
+    roue("Roue avant droite", 1.1, 0.85), roue("Roue avant gauche", 1.1, -0.85),
+    roue("Roue arrière droite", -1.1, 0.85), roue("Roue arrière gauche", -1.1, -0.85),
+  ] },
+/* 3 ---------------------------------------------------------------- */
+{ nom: "Fusée", emoji: "🚀", cat: "Aérospatial", dist: 11, y: -0.6,
+  resume: "Un lanceur à deux étages : le premier fournit la poussée du décollage, le second termine la mise en orbite de la charge utile protégée par la coiffe.",
+  specs: ["2 étages", "3 moteurs", "Propulsion chimique", "Coiffe larguable"],
+  parts: [
+    P("Coiffe", "Protège la charge utile pendant la traversée de l'atmosphère, puis se sépare une fois l'air raréfié.", "Composite carbone/époxy", 0xf2f4f7,
+      [['cone', [0.5, 1.2, 32], [0, 2.8, 0]]], [0, 2.4, 0]),
+    P("Charge utile", "Satellite ou sonde à placer en orbite. Elle est fixée à un adaptateur qui la libère au bon moment.", "Structures légères, panneaux solaires", 0xd4af37,
+      [['sph', [0.28], [0, 2.45, 0]], ['box', [0.8, 0.02, 0.2], [0, 2.45, 0], null, null, 0x1d4ed8]], [0, 1.2, 0], { metal: 0.8, rough: 0.3 }),
+    P("2e étage", "Prend le relais en haute altitude : son moteur est optimisé pour le vide et il achève la mise en orbite.", "Alliage aluminium-lithium", 0xe8ebef,
+      [['cyl', [0.5, 0.5, 1.4, 32], [0, 1.5, 0]], ['cyl', [0.505, 0.505, 0.2, 32], [0, 1.8, 0], null, null, 0xc0392b]], [0, 0.6, 0]),
+    P("Interétage", "Anneau structural qui relie les étages ; des charges pyrotechniques ou des ressorts assurent la séparation.", "Composite et pièces pyrotechniques", 0x2d3340,
+      [['cyl', [0.52, 0.52, 0.15, 32], [0, 0.72, 0]]], [0, 0.3, 0]),
+    P("1er étage", "Réservoirs de carburant et de comburant sous pression. Il fournit l'essentiel de la poussée au décollage.", "Alliage aluminium-lithium, acier inoxydable", 0xf2f4f7,
+      [['cyl', [0.55, 0.55, 2.2, 32], [0, -0.45, 0]], ['cyl', [0.555, 0.555, 0.35, 32], [0, 0.35, 0], null, null, 0x222831]], [0, -0.3, 0]),
+    P("Moteurs", "Chambres de combustion et tuyères : les gaz chauds accélérés dans la tuyère produisent la poussée.", "Alliages de nickel, refroidis par le carburant", 0x59616d,
+      [['cyl', [0.12, 0.3, 0.6, 20], [0, -1.85, 0.28]], ['cyl', [0.12, 0.3, 0.6, 20], [0.24, -1.85, -0.14]], ['cyl', [0.12, 0.3, 0.6, 20], [-0.24, -1.85, -0.14]]], [0, -1.6, 0], { metal: 0.7 }),
+    P("Ailerons", "Surfaces stabilisatrices qui aident à garder la trajectoire en début de vol.", "Alliage d'aluminium", 0xc0392b,
+      [['box', [0.5, 0.9, 0.04], [0.8, -1.1, 0]], ['box', [0.5, 0.9, 0.04], [0, -1.1, -0.8], [0, H, 0]],
+       ['box', [0.5, 0.9, 0.04], [-0.8, -1.1, 0], [0, PI, 0]], ['box', [0.5, 0.9, 0.04], [0, -1.1, 0.8], [0, 3 * H, 0]]], [0, -0.9, 0]),
+  ] },
+/* 4 ---------------------------------------------------------------- */
+{ nom: "Drone quadricoptère", emoji: "🚁", cat: "Aérospatial", dist: 8, y: 0,
+  resume: "Quatre hélices, un contrôleur de vol qui corrige l'assiette des centaines de fois par seconde et une nacelle caméra stabilisée.",
+  specs: ["4 moteurs brushless", "Batterie LiPo", "GPS + gyroscope", "Nacelle caméra"],
+  parts: [
+    P("Corps", "Châssis central qui accueille l'électronique et relie les bras.", "Fibre de carbone et plastique renforcé", 0x1f2733,
+      [['box', [0.7, 0.25, 0.7], [0, 0, 0]]], [0, 0, 0]),
+    P("Carte de vol & GPS", "Le contrôleur de vol lit gyroscope et accéléromètre pour stabiliser l'appareil ; le GPS donne la position.", "Circuit imprimé, capteurs MEMS", 0x15803d,
+      [['box', [0.4, 0.06, 0.4], [0, 0.18, 0]], ['cyl', [0.12, 0.12, 0.05, 20], [0, 0.26, -0.15], null, null, 0xe5e7eb]], [0, 0.9, 0]),
+    P("Bras", "Poutres légères qui écartent les moteurs. Leur rigidité limite les vibrations.", "Tube de fibre de carbone", 0x374151,
+      [['box', [2.6, 0.08, 0.12], [0, 0.05, 0], [0, PI / 4, 0]], ['box', [2.6, 0.08, 0.12], [0, 0.05, 0], [0, -PI / 4, 0]]], [0, -0.3, 0]),
+    P("Moteurs brushless", "Moteurs sans balais, très efficaces et durables, pilotés par des variateurs (ESC) qui règlent la vitesse de chaque hélice.", "Aimants néodyme, bobinages en cuivre", 0x9ca3af,
+      [0.92, -0.92].flatMap(x => [0.92, -0.92].map(z => ['cyl', [0.14, 0.14, 0.2, 18], [x, 0.14, z]])), [0, 0.5, 0], { metal: 0.7 }),
+    P("Hélices", "Elles créent la portance. Deux tournent dans un sens et deux dans l'autre pour annuler le couple de rotation.", "Polymère ou carbone", 0xe5e7eb,
+      [0.92, -0.92].flatMap(x => [0.92, -0.92].flatMap((z, k) => [['box', [1.3, 0.02, 0.1], [x, 0.27, z], [0, 0.3 + k, 0]], ['box', [1.3, 0.02, 0.1], [x, 0.27, z], [0, 0.3 + k + H, 0]]])), [0, 1.2, 0], { rough: 0.3 }),
+    P("Batterie LiPo", "Stocke l'énergie ; sa tension et sa capacité déterminent la puissance et l'autonomie (souvent 20 à 30 minutes).", "Lithium-polymère", 0x2563eb,
+      [['box', [0.5, 0.2, 0.4], [0, -0.22, 0]]], [0, -1.0, 0]),
+    P("Caméra sur nacelle", "Un support stabilisé par moteurs compense les mouvements pour obtenir des images fluides.", "Aluminium, capteur CMOS", 0x111827,
+      [['sph', [0.16], [0.45, -0.12, 0]], ['cyl', [0.07, 0.07, 0.1, 16], [0.6, -0.12, 0], [0, 0, H], null, 0x38bdf8], ['box', [0.15, 0.15, 0.25], [0.38, -0.02, 0]]], [0.9, -0.6, 0]),
+    P("Train d'atterrissage", "Patins qui protègent la nacelle et la batterie à l'atterrissage.", "Plastique ou carbone", 0x4b5563,
+      [['cyl', [0.03, 0.03, 1.2, 8], [0, -0.55, 0.4], [0, 0, H]], ['cyl', [0.03, 0.03, 1.2, 8], [0, -0.55, -0.4], [0, 0, H]],
+       ['cyl', [0.03, 0.03, 0.35, 8], [0.4, -0.38, 0.4]], ['cyl', [0.03, 0.03, 0.35, 8], [-0.4, -0.38, 0.4]],
+       ['cyl', [0.03, 0.03, 0.35, 8], [0.4, -0.38, -0.4]], ['cyl', [0.03, 0.03, 0.35, 8], [-0.4, -0.38, -0.4]]], [0, -1.5, 0]),
+  ] },
+/* 5 ---------------------------------------------------------------- */
+{ nom: "Satellite d'observation", emoji: "🛰️", cat: "Aérospatial", dist: 11, y: 0,
+  resume: "Un satellite en orbite basse : panneaux solaires pour l'énergie, instrument optique pour observer la Terre et antenne pour renvoyer les images.",
+  specs: ["Orbite basse ≈ 700 km", "Panneaux solaires", "Antenne parabolique", "Viseur stellaire"],
+  parts: [
+    P("Bus satellite", "Structure principale : elle porte les équipements et abrite l'ordinateur de bord, les batteries et la régulation thermique.", "Aluminium en nid d'abeille, isolation multicouche dorée", 0xc9a227,
+      [['box', [1.2, 1.2, 1.6], [0, 0, 0]], ['cyl', [0.04, 0.04, 0.5, 8], [0.85, 0, 0], [0, 0, H], null, 0x9ca3af], ['cyl', [0.04, 0.04, 0.5, 8], [-0.85, 0, 0], [0, 0, H], null, 0x9ca3af]],
+      [0, 0, 0], { metal: 0.85, rough: 0.3 }),
+    P("Panneau solaire droit", "Cellules photovoltaïques qui produisent l'électricité. Un mécanisme les oriente vers le Soleil.", "Cellules multi-jonctions (arséniure de gallium)", 0x1c3d7a,
+      [['box', [2.2, 0.04, 1.1], [2.2, 0, 0]], ...Array.from({ length: 5 }, (_, i) => ['box', [0.02, 0.045, 1.1], [1.4 + i * 0.4, 0, 0], null, null, 0x8fb4ff])], [1.4, 0, 0], { metal: 0.6, rough: 0.25 }),
+    P("Panneau solaire gauche", "Même rôle que le panneau droit : la surface totale détermine la puissance disponible (souvent plusieurs kilowatts).", "Cellules multi-jonctions (arséniure de gallium)", 0x1c3d7a,
+      [['box', [2.2, 0.04, 1.1], [-2.2, 0, 0]], ...Array.from({ length: 5 }, (_, i) => ['box', [0.02, 0.045, 1.1], [-1.4 - i * 0.4, 0, 0], null, null, 0x8fb4ff])], [-1.4, 0, 0], { metal: 0.6, rough: 0.25 }),
+    P("Antenne parabolique", "Concentre le signal radio pour communiquer avec les stations au sol avec un débit élevé.", "Composite carbone, surface métallisée", 0xe5e7eb,
+      [['cyl', [0.04, 0.04, 0.5, 8], [0, 0, 1.05], [H, 0, 0]], ['cyl', [0.55, 0.05, 0.2, 32], [0, 0, 1.4], [H, 0, 0]]], [0, 0, 1.4], { metal: 0.8, rough: 0.25 }),
+    P("Caméra optique", "Instrument d'observation de la Terre : télescope et capteur d'images.", "Miroirs en verre ultra-stable, structure carbone", 0x111827,
+      [['cyl', [0.25, 0.25, 0.5, 28], [0, -0.85, 0]], ['cyl', [0.2, 0.2, 0.02, 28], [0, -1.11, 0], null, null, 0x38bdf8]], [0, -1.4, 0]),
+    P("Propulseurs", "Petits moteurs qui corrigent l'orbite et orientent le satellite.", "Titane, ergols stockés sous pression", 0x6b7280,
+      [[0.4, -0.4].flatMap(x => [0.4, -0.4].map(y => ['cyl', [0.06, 0.14, 0.25, 16], [x, y, -0.95], [H, 0, 0]]))].flat(), [0, 0, -1.4], { metal: 0.7 }),
+    P("Viseur stellaire", "Caméra qui reconnaît les étoiles pour déterminer l'orientation du satellite avec une grande précision.", "Optique et capteur CMOS", 0x374151,
+      [['cyl', [0.12, 0.12, 0.3, 20], [0.3, 0.75, 0]], ['cyl', [0.15, 0.15, 0.06, 20], [0.3, 0.92, 0], null, null, 0x111827]], [0.5, 1.2, 0]),
+  ] },
+/* 6 ---------------------------------------------------------------- */
+{ nom: "Moniteur patient", emoji: "🩺", cat: "Biomédical", dist: 9.5, y: 0.5,
+  resume: "Le moniteur de chevet surveille en continu l'ECG, la saturation en oxygène et la pression artérielle, et déclenche des alarmes en cas de dérive.",
+  specs: ["ECG, SpO₂, PNI", "Alarmes 3 niveaux", "Batterie intégrée", "Chariot mobile"],
+  parts: [
+    P("Boîtier", "Coque qui protège l'électronique et résiste aux nettoyages fréquents et aux chocs.", "Plastique ABS/polycarbonate ignifugé", 0x2c3440,
+      [['box', [2.2, 1.5, 0.35], [0, 0.8, 0]]], [0, 0, 0.5]),
+    P("Écran & courbes", "Écran tactile qui affiche constantes et courbes en temps réel (ECG en vert, SpO₂ en cyan, pression en jaune).", "Dalle LCD/LED", 0x0a1410,
+      [['box', [1.9, 1.15, 0.04], [0, 0.85, 0.2]], ...wave(1.15, 0.12, 0x2ecc71, -0.8, 0.225), ...wave(0.8, 0.07, 0x22d3ee, -0.8, 0.225, 14, 0.115, 1), ...wave(0.5, 0.05, 0xfacc15, -0.8, 0.225, 14, 0.115, 2)],
+      [0, 0.6, 1.4]),
+    P("Modules d'acquisition", "Amplifient et numérisent les signaux : ECG, saturation en oxygène (SpO₂), pression non invasive, température.", "Électronique de précision isolée galvaniquement", 0x2563eb,
+      [['box', [0.6, 0.3, 0.28], [-0.7, -0.15, 0.05]], ['box', [0.6, 0.3, 0.28], [0, -0.15, 0.05], null, null, 0x16a34a], ['box', [0.6, 0.3, 0.28], [0.7, -0.15, 0.05], null, null, 0xea580c]],
+      [0, -0.7, 0.9]),
+    P("Câbles patient", "Relient électrodes, capteur de doigt et brassard au moniteur. Leur blindage limite les parasites.", "Cuivre blindé, gaine silicone", 0x111827,
+      [['tor', [0.35, 0.025, PI], [-0.7, -0.32, 0.2], [0, 0, PI]], ['tor', [0.35, 0.025, PI], [0, -0.32, 0.2], [0, 0, PI], null, 0xdc2626], ['tor', [0.35, 0.025, PI], [0.7, -0.32, 0.2], [0, 0, PI], null, 0x2563eb]],
+      [0, -0.5, 1.5]),
+    P("Alimentation & batterie", "Alimentation secteur isolée et batterie Li-ion qui assure plusieurs heures d'autonomie pendant un transport.", "Lithium-ion", 0x475569,
+      [['box', [1.0, 0.55, 0.25], [0, 0.8, -0.3]]], [0, 0, -1.1]),
+    P("Pied à roulettes", "Support mobile avec roues à frein pour déplacer le moniteur au chevet du patient.", "Acier et fonte", 0x6b7280,
+      [['cyl', [0.07, 0.07, 1.8, 16], [0, -1.15, -0.05]], ['cyl', [0.9, 0.9, 0.08, 32], [0, -2.05, 0]],
+       ['sph', [0.1], [0.7, -2.15, 0.4], null, null, 0x111111], ['sph', [0.1], [-0.7, -2.15, 0.4], null, null, 0x111111],
+       ['sph', [0.1], [0.7, -2.15, -0.4], null, null, 0x111111], ['sph', [0.1], [-0.7, -2.15, -0.4], null, null, 0x111111]], [0, -1.0, 0], { metal: 0.6 }),
+  ] },
+/* 7 ---------------------------------------------------------------- */
+{ nom: "Pompe à perfusion", emoji: "💧", cat: "Biomédical", dist: 10, y: 0,
+  resume: "Elle administre un médicament ou un soluté avec un débit précis, grâce à un mécanisme péristaltique qui presse la tubulure.",
+  specs: ["Débit programmable", "Mécanisme péristaltique", "Alarmes air/occlusion", "Batterie de secours"],
+  parts: [
+    P("Boîtier", "Coque étanche aux projections avec poignée et fixation à la potence.", "Plastique médical", 0xe6ecef,
+      [['box', [1.3, 1.7, 0.7], [0, 0, 0]], ['tor', [0.28, 0.035, PI], [0, 0.85, 0], null, null, 0x9aa5b1]], [0, 0, 0.5], { rough: 0.35 }),
+    P("Écran & clavier", "Interface pour régler débit, volume et durée, avec alarmes sonores et visuelles.", "Dalle LCD, touches en silicone", 0x0b3a52,
+      [['box', [0.95, 0.5, 0.04], [0, 0.5, 0.37]], ...[-0.36, -0.12, 0.12, 0.36].map(x => ['box', [0.18, 0.1, 0.04], [x, 0.05, 0.37], null, null, 0x64748b])], [0, 0.6, 1.3]),
+    P("Rotor péristaltique", "Des galets pressent la tubulure l'un après l'autre et poussent le liquide : le débit dépend de la vitesse de rotation.", "Acier inoxydable", 0x9aa5b1,
+      [['cyl', [0.3, 0.3, 0.2, 24], [0, -0.35, 0.35], [H, 0, 0]], ...Array.from({ length: 6 }, (_, k) => ['cyl', [0.05, 0.05, 0.25, 10], [0.2 * Math.cos(k * PI / 3), -0.35 + 0.2 * Math.sin(k * PI / 3), 0.38], [H, 0, 0], null, 0xdfe6ea])],
+      [0, -0.6, 1.2], { metal: 0.7 }),
+    P("Tubulure", "Ligne stérile à usage unique qui relie la poche au patient. Elle passe dans la pompe sans toucher le mécanisme.", "PVC médical sans DEHP", 0xcdeaf5,
+      [['cyl', [0.04, 0.04, 1.8, 10], [0, -0.68, 0.45], [0, 0, H]], ['cyl', [0.04, 0.04, 1.4, 10], [-0.9, 0.02, 0.45]], ['cyl', [0.1, 0.1, 0.35, 16], [-0.9, 0.9, 0.45]], ['cyl', [0.04, 0.04, 1.4, 10], [0.9, -1.38, 0.45]]],
+      [0, -0.4, 1.4], { op: 0.8 }),
+    P("Capteur d'air & occlusion", "Détecte les bulles d'air et les obstructions pour déclencher l'alarme avant tout danger.", "Capteur à ultrasons", 0xdc2626,
+      [['box', [0.2, 0.22, 0.16], [0.5, -0.68, 0.5]]], [0.6, -0.7, 1.2], { glow: true }),
+    P("Poche de soluté", "Contient le liquide à administrer ; elle est suspendue en hauteur, la gravité alimente la pompe.", "Polyoléfine ou PVC médical", 0xaee3f7,
+      [['sph', [0.45], [-0.9, 1.7, 0.45], [0, 0, 0], [0.9, 1.4, 0.55]], ['cyl', [0.02, 0.02, 0.45, 6], [-0.9, 2.55, 0.45], null, null, 0x9aa5b1]], [-1.2, 0.8, 0.8], { op: 0.7, rough: 0.2 }),
+    P("Potence", "Pied à sérum réglable en hauteur, avec bras pour accrocher la poche et collier de fixation de la pompe.", "Acier inoxydable", 0xaab4be,
+      [['cyl', [0.04, 0.04, 4.8, 12], [1.15, 0.4, 0.45]], ['cyl', [0.03, 0.03, 2.1, 8], [0.1, 2.75, 0.45], [0, 0, H]], ['box', [0.55, 0.1, 0.1], [0.9, 0.3, 0.45]]], [1.4, 0, 0.5], { metal: 0.8 }),
+    P("Batterie", "Permet de continuer la perfusion en cas de coupure ou pendant les déplacements.", "Lithium-ion", 0x1f2937,
+      [['box', [0.9, 0.45, 0.25], [0, -0.1, -0.2]]], [0, 0, -1.2]),
+    P("Électronique & moteur", "Microcontrôleur et moteur pas à pas qui entraînent le rotor avec précision.", "Circuit imprimé, moteur pas à pas", 0x15803d,
+      [['box', [0.8, 0.7, 0.04], [0, 0.2, -0.05]], ['cyl', [0.14, 0.14, 0.3, 16], [0, -0.35, 0.12], [H, 0, 0], null, 0x6b7280]], [0, 0, -2.3]),
+  ] },
+/* 8 ---------------------------------------------------------------- */
+{ nom: "Défibrillateur", emoji: "⚡", cat: "Biomédical", dist: 9.5, y: 0,
+  resume: "Il analyse le rythme cardiaque et délivre un choc électrique contrôlé pour rétablir un rythme normal lors d'un arrêt cardiaque.",
+  specs: ["Choc biphasique", "Analyse du rythme ECG", "Palettes ou électrodes", "Batterie lithium"],
+  parts: [
+    P("Boîtier & poignée", "Boîtier robuste, étanche aux projections, conçu pour être transporté lors d'interventions.", "Polycarbonate renforcé", 0xd9441f,
+      [['box', [2.0, 1.4, 0.9], [0, 0, 0]], ['tor', [0.5, 0.06, PI], [0, 0.7, 0], null, null, 0x2b2b2b], ['box', [0.3, 0.9, 0.5], [1.15, 0, 0], null, null, 0x2b2b2b], ['box', [0.3, 0.9, 0.5], [-1.15, 0, 0], null, null, 0x2b2b2b]],
+      [0, 0, 0.8]),
+    P("Écran ECG", "Affiche le tracé cardiaque pour décider si un choc est indiqué.", "Écran LCD", 0x0a1814,
+      [['box', [0.95, 0.6, 0.04], [-0.4, 0.25, 0.47]], ...wave(0.25, 0.12, 0x22e58b, -0.8, 0.495, 14, 0.06), ...wave(0.05, 0.05, 0x22d3ee, -0.8, 0.495, 14, 0.06, 2)], [0, 0, 1.3]),
+    P("Bouton de choc", "Commande la décharge une fois le condensateur chargé. Elle n'est active qu'après analyse du rythme.", "Plastique, contact scellé", 0xfbbf24,
+      [['cyl', [0.22, 0.22, 0.12, 28], [0.55, -0.1, 0.5], [H, 0, 0]], ['cyl', [0.3, 0.3, 0.06, 28], [0.55, -0.1, 0.46], [H, 0, 0], null, 0x1f2937, false]], [0.5, 0, 1.6], { glow: true }),
+    P("Palette droite", "Électrode appliquée sur le thorax : elle mesure l'ECG et délivre le choc.", "Acier inoxydable", 0xcfd6dd,
+      [['box', [0.3, 0.55, 0.28], [1.5, 0.15, 0.1], null, null, 0x2b2b2b], ['cyl', [0.3, 0.3, 0.1, 28], [1.5, -0.25, 0.1]]], [1.3, 0, 1.0], { metal: 0.8 }),
+    P("Palette gauche", "Seconde électrode : le courant traverse le cœur d'une palette à l'autre.", "Acier inoxydable", 0xcfd6dd,
+      [['box', [0.3, 0.55, 0.28], [-1.5, 0.15, 0.1], null, null, 0x2b2b2b], ['cyl', [0.3, 0.3, 0.1, 28], [-1.5, -0.25, 0.1]]], [-1.3, 0, 1.0], { metal: 0.8 }),
+    P("Condensateur haute tension", "Stocke l'énergie électrique (charge à quelques kilovolts) puis la libère en quelques millisecondes.", "Condensateur à film", 0x3b82f6,
+      [['cyl', [0.3, 0.3, 0.8, 28], [0.45, 0, -0.05], [H, 0, 0]]], [0.9, 0, -1.5]),
+    P("Batterie", "Alimente la charge rapide du condensateur ; son niveau est contrôlé automatiquement à chaque allumage.", "Lithium", 0x1f2937,
+      [['box', [0.8, 0.5, 0.35], [-0.5, -0.3, -0.15]]], [-0.9, 0, -1.5]),
+    P("Carte d'analyse", "Analyse le rythme cardiaque et reconnaît la fibrillation ventriculaire pour proposer un choc.", "Circuit imprimé, processeur de signal", 0x15803d,
+      [['box', [1.0, 0.8, 0.05], [0, 0.15, 0.3]]], [0, 0.5, -2.2]),
+  ] },
+/* 9 ---------------------------------------------------------------- */
+{ nom: "Scanner IRM", emoji: "🧲", cat: "Biomédical", dist: 13, y: 0.5,
+  resume: "L'imagerie par résonance magnétique utilise un champ magnétique intense et des ondes radio pour reconstruire des images détaillées des tissus mous, sans rayons X.",
+  specs: ["Champ 1,5 à 3 teslas", "Aimant supraconducteur", "Hélium liquide ≈ -269 °C", "Examen 20-45 min"],
+  parts: [
+    P("Carter de l'aimant", "Coque extérieure qui isole le tunnel et dissimule les composants. L'alésage central accueille le patient.", "Plastique et fibre de verre", 0xe9eef2,
+      [['tor', [1.35, 0.6], [0, 0.2, 0], [0, 0, 0], [1, 1, 2.4]], ['box', [3.4, 0.4, 2.8], [0, -1.95, 0], null, null, 0xcbd5df], ['tor', [0.78, 0.04], [0, 0.2, 1.47], null, null, 0x38bdf8, true]],
+      [0, 0, 0.2], { rough: 0.3 }),
+    P("Aimant supraconducteur", "Des bobines refroidies à l'hélium liquide (environ -269 °C) créent un champ magnétique très puissant et stable.", "Niobium-titane dans un cryostat", 0xb87333,
+      [-0.8, 0, 0.8].map(z => ['tor', [1.5, 0.17], [0, 0.2, z]]), [0, 0, -2.4], { metal: 0.85, rough: 0.3 }),
+    P("Bobines de gradient", "Elles modifient légèrement le champ pour localiser chaque point du corps ; ce sont elles qui provoquent le bruit pendant l'examen.", "Cuivre, résine époxy", 0x2980b9,
+      [-0.5, 0.5].map(z => ['tor', [1.1, 0.08], [0, 0.2, z]]), [0, 2.8, 0]),
+    P("Table patient", "Table motorisée qui amène le patient au centre de l'aimant avec précision.", "Composite non magnétique", 0x2f3540,
+      [['box', [0.95, 0.1, 4.2], [0, -0.5, 0.5]], ['box', [0.8, 1.4, 0.8], [0, -1.25, 2.1], null, null, 0x6b7280]], [0, 0, 1.8]),
+    P("Patient (mannequin)", "Mannequin qui donne l'échelle : le patient reste immobile dans le tunnel pendant l'acquisition.", "Sans objet", 0xdbe4ee,
+      [['cap', [0.22, 0.7], [0, -0.2, 0.35], [H, 0, 0]], ['sph', [0.19], [0, -0.2, 1.15]], ['cap', [0.09, 0.8], [0.12, -0.3, -0.85], [H, 0, 0]], ['cap', [0.09, 0.8], [-0.12, -0.3, -0.85], [H, 0, 0]]],
+      [0, 1.1, 1.8], { metal: 0.05, rough: 0.7 }),
+    P("Console opérateur", "Poste de commande hors de la salle d'examen : choix du protocole, acquisition et reconstruction des images.", "Ordinateur, écrans", 0x3a4352,
+      [['box', [1.7, 0.8, 0.9], [3.7, -1.55, 0.6]], ['box', [1.2, 0.8, 0.06], [3.7, -0.6, 0.3], null, null, 0x08121f], ['box', [1.1, 0.7, 0.02], [3.7, -0.6, 0.34], null, null, 0x1d4ed8, true],
+       ['cyl', [0.05, 0.05, 0.4, 8], [3.7, -1.0, 0.3]], ['box', [0.9, 0.04, 0.3], [3.7, -1.12, 0.9], null, null, 0x1f2937]], [1.4, 0, 0.6]),
+  ] },
+/* 10 --------------------------------------------------------------- */
+{ nom: "Respirateur", emoji: "🫁", cat: "Biomédical", dist: 10.5, y: 0.4,
+  resume: "Il assiste ou remplace la respiration d'un patient en délivrant un mélange d'air et d'oxygène à pression et débit contrôlés.",
+  specs: ["Turbine intégrée", "FiO₂ réglable", "Courbes en temps réel", "Circuit à usage unique"],
+  parts: [
+    P("Unité principale", "Coffret qui abrite la turbine, les valves, les capteurs et l'alimentation.", "Plastique ignifugé", 0x39495a,
+      [['box', [1.8, 1.3, 1.0], [0, 0, 0]], ['cyl', [0.1, 0.1, 0.14, 16], [0.6, -0.2, 0.52], [H, 0, 0], null, 0x9aa5b1], ['cyl', [0.1, 0.1, 0.14, 16], [-0.6, -0.2, 0.52], [H, 0, 0], null, 0x9aa5b1], ['box', [0.5, 0.2, 0.2], [0, 0.75, 0], null, null, 0x1f2937]],
+      [0, 0, 0.9]),
+    P("Écran LCD", "Affiche les courbes de pression, de débit et de volume ainsi que les réglages (fréquence, volume courant, PEEP).", "Dalle LCD", 0x0b1522,
+      [['box', [1.6, 1.0, 0.07], [0, 1.35, 0.05]], ...wave(1.6, 0.1, 0x22e58b, -0.75, 0.095), ...wave(1.3, 0.08, 0x22d3ee, -0.75, 0.095, 14, 0.115, 1), ...wave(1.0, 0.05, 0xfacc15, -0.75, 0.095, 14, 0.115, 2)],
+      [0, 0.7, 0.9]),
+    P("Circuit patient", "Tuyaux annelés : une branche amène le gaz au patient, l'autre évacue l'air expiré. Une pièce en Y les réunit avant le masque.", "Silicone ou PVC, usage unique", 0x7dd3fc,
+      [['cyl', [0.055, 0.055, 0.3, 10], [0.6, -0.35, 0.62]], ['tor', [0.25, 0.055, PI], [0.35, -0.5, 0.62], [0, 0, PI]], ['cyl', [0.055, 0.055, 0.3, 10], [-0.6, -0.35, 0.62]], ['tor', [0.25, 0.055, PI], [-0.35, -0.5, 0.62], [0, 0, PI]],
+       ['box', [0.3, 0.14, 0.14], [0, -0.5, 0.62], null, null, 0xe5e7eb], ['cyl', [0.07, 0.07, 0.6, 12], [0, -0.85, 0.62]], ['sph', [0.25], [0, -1.3, 0.62], [0, 0, 0], [1, 0.6, 0.7], 0xbfe9ff]],
+      [0, -0.3, 1.7], { op: 0.9 }),
+    P("Humidificateur", "Réchauffe et humidifie les gaz pour protéger les voies respiratoires.", "Cuve en plastique, plaque chauffante", 0xe5e7eb,
+      [['cyl', [0.32, 0.32, 0.6, 28], [1.35, 0, 0.15]], ['cyl', [0.3, 0.3, 0.3, 24], [1.35, -0.15, 0.15], null, null, 0x3b9ee6], ['cyl', [0.34, 0.34, 0.08, 28], [1.35, -0.34, 0.15], null, null, 0x6b7280]],
+      [1.6, 0.2, 0.9], { op: 0.85 }),
+    P("Turbine", "Génère le flux d'air sous pression envoyé au patient, avec une grande précision de vitesse.", "Moteur brushless, rotor en aluminium", 0x9aa5b1,
+      [['cyl', [0.38, 0.38, 0.5, 28], [-0.45, 0, -0.1], [H, 0, 0]], ['tor', [0.2, 0.04], [-0.45, 0, 0.17], null, null, 0x222831]], [-0.9, 0, -1.6], { metal: 0.7 }),
+    P("Mélangeur air/O₂ & valves", "Règle la concentration d'oxygène (FiO₂) et ouvre ou ferme le circuit à chaque cycle respiratoire.", "Laiton, silicone, capteurs", 0xf59e0b,
+      [['box', [0.55, 0.5, 0.4], [0.5, 0.1, -0.15]], ['cyl', [0.08, 0.08, 0.35, 12], [0.35, 0.35, -0.15], null, null, 0x16a34a], ['cyl', [0.08, 0.08, 0.35, 12], [0.65, 0.35, -0.15], null, null, 0x16a34a]], [0.9, 0, -1.6]),
+    P("Chariot", "Pied avec roulettes freinées pour déplacer l'appareil d'une chambre à l'autre.", "Acier peint", 0x4b5563,
+      [['cyl', [0.1, 0.1, 0.8, 16], [0, -1.05, 0]], ['box', [1.8, 0.1, 0.3], [0, -1.5, 0], [0, 0.6, 0]], ['box', [1.8, 0.1, 0.3], [0, -1.5, 0], [0, -0.6, 0]],
+       ...[[0.74, -0.51], [-0.74, 0.51], [0.74, 0.51], [-0.74, -0.51]].map(([x, z]) => ['sph', [0.12], [x, -1.62, z], null, null, 0x111111])], [0, -1.0, 0], { metal: 0.5 }),
+  ] },
+];
+
+/* =====================================================================
+   SCENE THREE.JS
+   ===================================================================== */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+
+scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x1a2230, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(5, 8, 6); scene.add(sun);
+const rim = new THREE.DirectionalLight(0x5aa9ff, 1.0); rim.position.set(-6, 3, -5); scene.add(rim);
+
+const grid = new THREE.GridHelper(40, 40, 0x2a4a6a, 0x14233a);
+grid.position.y = -2.4; grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
+const halo = new THREE.Mesh(new THREE.RingGeometry(3.2, 3.26, 96), new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+halo.rotation.x = -H; halo.position.y = -2.39; scene.add(halo);
+
+const stage = new THREE.Group();
+stage.rotation.order = 'YXZ'; stage.rotation.y = -0.6; stage.rotation.x = 0.18;
+scene.add(stage);
+
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x9bdcff, transparent: true, opacity: 0.55 });
+
+function makeGeo(t, a) {
+  switch (t) {
+    case 'box': return new THREE.BoxGeometry(a[0], a[1], a[2]);
+    case 'cyl': return new THREE.CylinderGeometry(a[0], a[1], a[2], a[3] || 24);
+    case 'sph': return new THREE.SphereGeometry(a[0], 28, 18);
+    case 'cone': return new THREE.ConeGeometry(a[0], a[1], a[2] || 32);
+    case 'tor': return new THREE.TorusGeometry(a[0], a[1], 14, 56, a[2] || PI * 2);
+    case 'cap': return new THREE.CapsuleGeometry(a[0], a[1], 6, 16);
+  }
+}
+
+function buildObject(def) {
+  const g = new THREE.Group();
+  g.position.y = def.y || 0;
+  const parts = [];
+  def.parts.forEach((pd, i) => {
+    const pg = new THREE.Group();
+    pg.userData = { i, def: pd, ex: new THREE.Vector3(...pd.ex), meshes: [] };
+    pd.items.forEach(it => {
+      const [t, a, p0, r0, s = null, c, glowItem] = it;
+      const p = p0 ?? [0, 0, 0], r = r0 ?? [0, 0, 0];
+      const geo = makeGeo(t, a);
+      const col = c ?? pd.c;
+      const glow = pd.glow || glowItem === true;
+      const mat = new THREE.MeshStandardMaterial({ color: col, metalness: pd.metal ?? 0.3, roughness: pd.rough ?? 0.45 });
+      if (glow) { mat.emissive = new THREE.Color(col); mat.emissiveIntensity = 0.9; }
+      mat.userData = { op: pd.op ?? 1, base: glow ? 0.9 : 0, baseEm: mat.emissive.clone() };
+      if (mat.userData.op < 1) { mat.transparent = true; mat.opacity = mat.userData.op; }
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(p[0], p[1], p[2]);
+      m.rotation.set(r[0], r[1], r[2]);
+      if (s) m.scale.set(s[0], s[1], s[2]);
+      m.userData.part = pg;
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat);
+      edges.visible = false; m.add(edges); m.userData.edges = edges;
+      pg.add(m); pg.userData.meshes.push(m);
+    });
+    g.add(pg); parts.push(pg);
+  });
+  g.userData.parts = parts;
+  return g;
+}
+
+/* ---- Etat ---- */
+const cache = [];
+let idx = 0, curGroup = null, selPart = null, hoverPart = null;
+let exploded = false, expF = 0, xray = false, spin = true, grabbing = false;
+let camDist = 10, camTarget = 10, appearT = 1;
+
+function updatePaint() {
+  if (!curGroup) return;
+  curGroup.userData.parts.forEach(pg => {
+    const mode = pg === selPart ? 2 : pg === hoverPart ? 1 : 0;
+    pg.userData.meshes.forEach(m => {
+      const mt = m.material;
+      if (mode === 0) { mt.emissive.copy(mt.userData.baseEm); mt.emissiveIntensity = mt.userData.base; }
+      else { mt.emissive.set(0x38bdf8); mt.emissiveIntensity = mode === 2 ? 0.75 : 0.4; }
+    });
+  });
+}
+function applyXray() {
+  if (!curGroup) return;
+  curGroup.userData.parts.forEach(pg => pg.userData.meshes.forEach(m => {
+    const mt = m.material;
+    if (xray) { mt.transparent = true; mt.opacity = 0.22; mt.depthWrite = false; }
+    else { mt.transparent = mt.userData.op < 1; mt.opacity = mt.userData.op; mt.depthWrite = true; }
+    m.userData.edges.visible = xray;
+  }));
+}
+
+/* ---- Interface ---- */
+const $ = id => document.getElementById(id);
+const listEl = $('list'), card = $('card'), toastEl = $('toast');
+const LEGEND = [
+  ['☝️', '1 doigt', 'Pointer ; maintenez 1 s pour cliquer'],
+  ['✊', 'Poing', 'Déplacez-le pour faire tourner'],
+  ['✌️', '2 doigts', 'Maintenir : vue éclatée'],
+  ['3️⃣', '3 doigts', 'Maintenir : transparence'],
+  ['🖐', 'Paume', 'Balayer : objet suivant / précédent'],
+  ['🙌', '2 paumes', 'Écarter / rapprocher : zoom'],
+];
+$('legend').innerHTML = LEGEND.map(l => `<div><b>${l[0]} ${l[1]}</b><span>${l[2]}</span></div>`).join('');
+$('startLegend').innerHTML = LEGEND.map(l => `<div><b>${l[0]} ${l[1]}</b><span style="color:#9fb2d3">${l[2]}</span></div>`).join('');
+
+listEl.innerHTML = OBJETS.map((o, i) =>
+  `<button class="item" data-action="obj:${i}"><span class="n">${i + 1}</span><span class="e">${o.emoji}</span><span class="t">${o.nom}<small>${o.cat}</small></span></button>`).join('');
+
+function renderList() {
+  [...listEl.children].forEach((b, i) => b.classList.toggle('on', i === idx));
+}
+function renderCard() {
+  const o = OBJETS[idx];
+  let h = `<div class="ctitle"><span>${o.emoji}</span><div><h2>${o.nom}</h2><small>${o.cat}</small></div></div>
+    <p class="res">${o.resume}</p><div class="chips">${o.specs.map(s => `<span>${s}</span>`).join('')}</div>`;
+  if (selPart) {
+    const d = selPart.userData.def;
+    h += `<div class="sel"><button class="mini" data-action="clear">Fermer</button><b>${d.n}</b><p>${d.d}</p><div class="mat">Matériau : ${d.m}</div></div>`;
+  }
+  h += `<div class="plist"><div class="lbl">Composants (${o.parts.length})</div>` +
+    o.parts.map((p, i) => `<button data-action="part:${i}" class="${selPart && selPart.userData.i === i ? 'on' : ''}">${p.n}</button>`).join('') + `</div>`;
+  card.innerHTML = h;
+}
+function syncButtons() {
+  $('b-explode').classList.toggle('on', exploded);
+  $('b-xray').classList.toggle('on', xray);
+  $('b-spin').classList.toggle('on', spin);
+}
+let toastT;
+function toast(msg) {
+  toastEl.textContent = msg; toastEl.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+
+function selectObject(i) {
+  const N = OBJETS.length;
+  idx = ((i % N) + N) % N;
+  if (curGroup) stage.remove(curGroup);
+  if (!cache[idx]) cache[idx] = buildObject(OBJETS[idx]);
+  curGroup = cache[idx]; stage.add(curGroup);
+  curGroup.scale.setScalar(0.05); appearT = 0;
+  selPart = null; hoverPart = null;
+  applyXray(); updatePaint(); renderList(); renderCard();
+  camTarget = OBJETS[idx].dist || 10;
+  toast(`${OBJETS[idx].emoji} ${OBJETS[idx].nom}`);
+}
+function selectPartIdx(i) {
+  const pg = i >= 0 ? curGroup.userData.parts[i] : null;
+  selPart = (pg && pg === selPart) ? null : pg;
+  updatePaint(); renderCard();
+  if (selPart) toast(selPart.userData.def.n);
+}
+function resetView() {
+  stage.rotation.set(0.18, -0.6, 0); camTarget = OBJETS[idx].dist || 10;
+  exploded = false; xray = false; applyXray(); selPart = null; updatePaint(); renderCard();
+  toast('Vue recentrée');
+}
+function doAction(a) {
+  if (a.startsWith('obj:')) selectObject(+a.slice(4));
+  else if (a.startsWith('part:')) selectPartIdx(+a.slice(5));
+  else switch (a) {
+    case 'next': selectObject(idx + 1); break;
+    case 'prev': selectObject(idx - 1); break;
+    case 'explode': exploded = !exploded; toast(exploded ? '💥 Vue éclatée' : 'Vue assemblée'); break;
+    case 'xray': xray = !xray; applyXray(); toast(xray ? '🔍 Transparence activée' : 'Transparence désactivée'); break;
+    case 'spin': spin = !spin; toast(spin ? 'Rotation automatique' : 'Rotation arrêtée'); break;
+    case 'reset': resetView(); break;
+    case 'clear': selPart = null; updatePaint(); renderCard(); break;
+  }
+  syncButtons();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-action]');
+  if (b) doAction(b.dataset.action);
+});
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') doAction('next');
+  else if (e.key === 'ArrowLeft') doAction('prev');
+  else if (e.key === 'e') doAction('explode');
+  else if (e.key === 'x') doAction('xray');
+  else if (e.key === ' ') { e.preventDefault(); doAction('spin'); }
+  else if (/^[0-9]$/.test(e.key)) selectObject(e.key === '0' ? 9 : +e.key - 1);
+});
+
+/* ---- Souris (secours) ---- */
+const rc = new THREE.Raycaster(); rc.params.Line.threshold = 0.01;
+const v2 = new THREE.Vector2();
+function pickPart(x, y) {
+  if (!curGroup) return null;
+  v2.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
+  rc.setFromCamera(v2, camera);
+  for (const h of rc.intersectObjects(curGroup.children, true)) {
+    if (h.object.userData.part) return h.object.userData.part;
+  }
+  return null;
+}
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+    stage.rotation.y += dx * 0.008; stage.rotation.x = clamp(stage.rotation.x + dy * 0.006, -1.3, 1.3);
+  } else if (!ptrActive) {
+    const pp = pickPart(e.clientX, e.clientY);
+    if (pp !== hoverPart) { hoverPart = pp; updatePaint(); }
+  }
+});
+canvas.addEventListener('pointerup', e => {
+  if (drag && drag.moved < 5) { const pp = pickPart(e.clientX, e.clientY); doAction(pp ? 'part:' + pp.userData.i : 'clear'); }
+  drag = null;
+});
+canvas.addEventListener('wheel', e => { e.preventDefault(); camTarget = clamp(camTarget * (1 + Math.sign(e.deltaY) * 0.08), 3.2, 18); }, { passive: false });
+
+/* =====================================================================
+   MAIN : détection MediaPipe + gestes
+   ===================================================================== */
+const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const video = $('video'), pv = $('preview'), pctx = pv.getContext('2d');
+const cursor = $('cursor'), hudtxt = $('hudtxt'), hudbar = $('hudbar');
+let landmarker = null, lastVT = -1;
+
+const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function analyze(lm) {
+  const w = lm[0];
+  const [i, m, r, p] = [[6, 8], [10, 12], [14, 16], [18, 20]].map(([pip, tip]) => d2(lm[tip], w) > d2(lm[pip], w) * 1.12);
+  let g = 'other';
+  if (!i && !m && !r && !p) g = 'fist';
+  else if (i && !m && !r && !p) g = 'point';
+  else if (i && m && !r && !p) g = 'peace';
+  else if (i && m && r && !p) g = 'three';
+  else if (i && m && r && p) g = 'open';
+  return { g, lm };
+}
+
+let cand = null, candN = 0, gest = null, gestSince = 0, fired = false, lastFire = 0, lastSwipe = 0;
+let palmPrev = null, swipeH = [], zoomRef = null;
+let ptrActive = false, ptr = { x: 0, y: 0 }, hoverEl = null;
+let dwellKey = null, dwellStart = 0, dwellLock = 0;
+
+function stable(g) {
+  if (g === cand) candN++; else { cand = g; candN = 1; }
+  if (candN >= 3 && g !== gest) { gest = g; gestSince = performance.now(); fired = false; palmPrev = null; swipeH = []; }
+  return gest;
+}
+const LABEL = { null: '👋 Montrez votre main', point: '☝️ Pointeur', fist: '✊ Rotation', peace: '✌️ Vue éclatée…', three: '3️⃣ Transparence…', open: '🖐 Balayez pour changer', zoom: '🙌 Zoom', other: '…' };
+function hud(g, now) {
+  hudtxt.textContent = LABEL[g] ?? LABEL.other;
+  let p = 0;
+  if (g === 'peace' || g === 'three') p = fired ? 1 : Math.min(1, (now - gestSince) / 600);
+  hudbar.style.width = (p * 100) + '%';
+}
+function setHover(el, pp) {
+  if (hoverEl !== el) { if (hoverEl) hoverEl.classList.remove('hover'); hoverEl = el; if (el) el.classList.add('hover'); }
+  if (hoverPart !== pp) { hoverPart = pp; updatePaint(); }
+}
+function endPointer() {
+  if (!ptrActive) return;
+  ptrActive = false; cursor.style.display = 'none'; setHover(null, null); dwellKey = null;
+}
+function doPointer(lm, now) {
+  const tx = clamp((1 - lm[8].x - 0.12) / 0.76, 0, 1) * innerWidth;
+  const ty = clamp((lm[8].y - 0.1) / 0.7, 0, 1) * innerHeight;
+  if (!ptrActive) { ptr.x = tx; ptr.y = ty; }
+  ptr.x += (tx - ptr.x) * 0.4; ptr.y += (ty - ptr.y) * 0.4;
+  ptrActive = true;
+  cursor.style.display = 'block';
+  cursor.style.transform = `translate(${ptr.x}px,${ptr.y}px)`;
+  const el = document.elementFromPoint(ptr.x, ptr.y);
+  const act = el && el.closest ? el.closest('[data-action]') : null;
+  let key = null, hEl = null, pp = null;
+  if (act) { key = act.dataset.action; hEl = act; }
+  else if (el === canvas) { pp = pickPart(ptr.x, ptr.y); if (pp) key = 'part:' + pp.userData.i; }
+  setHover(hEl, pp);
+  if (now < dwellLock) key = null;
+  if (key !== dwellKey) { dwellKey = key; dwellStart = now; }
+  const p = key ? Math.min(1, (now - dwellStart) / 1100) : 0;
+  cursor.style.setProperty('--p', p);
+  if (key && p >= 1) {
+    dwellLock = now + 900; dwellKey = null; cursor.style.setProperty('--p', 0);
+    doAction(key);
+  }
+}
+function drawPreview(hands) {
+  const W = pv.width, Hh = pv.height;
+  pctx.save(); pctx.translate(W, 0); pctx.scale(-1, 1); pctx.drawImage(video, 0, 0, W, Hh); pctx.restore();
+  hands.forEach(lm => {
+    pctx.strokeStyle = 'rgba(56,189,248,.95)'; pctx.lineWidth = 2;
+    CONN.forEach(([a, b]) => { pctx.beginPath(); pctx.moveTo((1 - lm[a].x) * W, lm[a].y * Hh); pctx.lineTo((1 - lm[b].x) * W, lm[b].y * Hh); pctx.stroke(); });
+    pctx.fillStyle = '#fff';
+    lm.forEach(p => { pctx.beginPath(); pctx.arc((1 - p.x) * W, p.y * Hh, 2.5, 0, 7); pctx.fill(); });
+  });
+}
+
+function handleHands(hands, now) {
+  drawPreview(hands);
+  if (!hands.length) {
+    stable(null); hud(null, now); grabbing = false; zoomRef = null; palmPrev = null; endPointer(); return;
+  }
+  const A = hands.map(analyze);
+  let g = A[0].g;
+  if (A.length > 1 && A[0].g === 'open' && A[1].g === 'open') g = 'zoom';
+  g = stable(g);
+  hud(g, now);
+  if (g !== 'point') endPointer();
+  if (g !== 'fist') { grabbing = false; palmPrev = null; }
+  if (g !== 'zoom') zoomRef = null;
+
+  if (g === 'point') doPointer(A[0].lm, now);
+  else if (g === 'fist') {
+    const lm = A[0].lm, c = { x: 1 - lm[9].x, y: lm[9].y };
+    if (palmPrev) {
+      stage.rotation.y += (c.x - palmPrev.x) * 7;
+      stage.rotation.x = clamp(stage.rotation.x + (c.y - palmPrev.y) * 5, -1.3, 1.3);
+    }
+    palmPrev = c; grabbing = true;
+  }
+  else if (g === 'peace' || g === 'three') {
+    if (!fired && now - gestSince > 600 && now - lastFire > 800) {
+      fired = true; lastFire = now; doAction(g === 'peace' ? 'explode' : 'xray');
+    }
+  }
+  else if (g === 'open') {
+    const x = 1 - A[0].lm[9].x;
+    swipeH.push({ t: now, x });
+    while (swipeH.length && now - swipeH[0].t > 450) swipeH.shift();
+    if (now - lastSwipe > 1000 && now - gestSince > 250 && swipeH.length > 3) {
+      const xs = swipeH.map(s => s.x);
+      if (Math.max(...xs) - Math.min(...xs) > 0.28) {
+        const dir = swipeH[swipeH.length - 1].x > swipeH[0].x ? 1 : -1;
+        lastSwipe = now; swipeH = []; doAction(dir > 0 ? 'next' : 'prev');
+      }
+    }
+  }
+  else if (g === 'zoom') {
+    const a = A[0].lm[9], b = A[1].lm[9];
+    const dist = Math.max(0.05, d2(a, b));
+    if (!zoomRef) zoomRef = { d: dist, cam: camTarget };
+    camTarget = clamp(zoomRef.cam * zoomRef.d / dist, 3.2, 18);
+  }
+}
+
+async function startCamera() {
+  const msg = $('startMsg');
+  $('btnCam').disabled = true;
+  try {
+    msg.textContent = 'Chargement du modèle de détection de main…';
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const fs = await vision.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    const opts = delegate => ({ baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 2,
+      minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 });
+    try { landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('GPU')); }
+    catch (e) { landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('CPU')); }
+    msg.textContent = 'Autorisez l\'accès à la caméra…';
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+    video.srcObject = stream; await video.play();
+    $('start').style.display = 'none';
+    hudtxt.textContent = LABEL.null;
+    toast('Caméra activée : montrez votre main');
+  } catch (e) {
+    console.error(e);
+    landmarker = null;
+    $('btnCam').disabled = false;
+    msg.textContent = 'Caméra indisponible (' + (e && e.message ? e.message : e) + '). Ouvrez la page via http://localhost (voir les instructions) ou continuez avec la souris.';
+  }
+}
+$('btnCam').addEventListener('click', startCamera);
+$('btnMouse').addEventListener('click', () => { $('start').style.display = 'none'; });
+
+/* =====================================================================
+   BOUCLE DE RENDU
+   ===================================================================== */
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05), now = performance.now();
+
+  if (landmarker && video.readyState >= 2 && video.currentTime !== lastVT) {
+    lastVT = video.currentTime;
+    try { const r = landmarker.detectForVideo(video, now); handleHands(r.landmarks || [], now); }
+    catch (e) { console.warn(e); }
+  }
+
+  if (appearT < 1 && curGroup) {
+    appearT = Math.min(1, appearT + dt * 2.2);
+    curGroup.scale.setScalar(0.05 + 0.95 * (1 - Math.pow(1 - appearT, 3)));
+  }
+  expF += ((exploded ? 1 : 0) - expF) * Math.min(1, dt * 4);
+  if (curGroup) curGroup.userData.parts.forEach(pg => pg.position.copy(pg.userData.ex).multiplyScalar(expF));
+  if (spin && !grabbing && !drag) stage.rotation.y += dt * 0.3;
+
+  camDist += (camTarget - camDist) * Math.min(1, dt * 6);
+  camera.position.set(0, camDist * 0.28, camDist);
+  camera.lookAt(0, 0, 0);
+  renderer.render(scene, camera);
+}
+
+selectObject(0);
+syncButtons();
+frame();
+</script>
+</body>
+</html>
